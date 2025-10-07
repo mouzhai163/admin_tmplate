@@ -1,36 +1,31 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NextJS + Tailwind + Shadcn/ui 后台框架
 
-## Getting Started
+## 项目简介
 
-First, run the development server:
+这是一个基于 **Next.js** 的现代后台管理框架，集成了 **NextAuth.js** 进行用户认证和权限控制，前端样式使用 **TailwindCSS** 和 **Shadcn/ui** 构建。
+该框架旨在提供快速启动后台项目的基础架构，包括响应式布局、权限管理、主题切换和常用组件封装，适合中小型项目或内部管理系统。
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+---
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 技术栈
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| 类型     | 技术 / 库              |
+| -------- | ---------------------- |
+| 框架     | Next.js (App Router)   |
+| 样式     | TailwindCSS, Shadcn/ui |
+| 用户认证 | better-auth            |
+| 数据库   | mysql8.0                |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 功能规划
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **用户系统**
+  - 登录 / 登出
+  - 注册
+  - // 权限角色（RBAC / PBAC 支持） 暂时只采用单用户
+- **主题支持**
+  - Light / Dark 模式
+- **可扩展性**
+  - 支持快速增加新的页面和组件
+  - 可插拔的路由和权限模块
