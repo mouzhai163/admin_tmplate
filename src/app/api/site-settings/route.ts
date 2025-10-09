@@ -31,7 +31,6 @@ export async function POST(request:NextRequest){
         return NextResponse.json({ error: "用户无权限" }, { status: 401 })
     }
 
-
     
     const data = await request.json()
     const { siteName, siteDesc, siteKeywords, siteLogo } = data

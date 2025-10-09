@@ -16,7 +16,14 @@ export const auth = betterAuth({
     autoSignIn: false,
     // 用户必须先验证邮箱才能登录
     requireEmailVerification: true,
+    sendResetPassword:async({user, url, token}, request) => {
+      await mailer.sendPasswordResetEmail(user.email, url, user.name);
+    },
+    onPasswordReset:async({ user }, request) => {
+      console.log('密码重置成功:', user.email);
+    },
   },
+  
   database: drizzleAdapter(db, {
     provider: "mysql", // 或 "mongodb", "postgresql", ...等
     schema, //需要你显式传入包含所有表的 schema 对象（含 user 表）

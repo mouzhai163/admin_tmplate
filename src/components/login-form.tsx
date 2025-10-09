@@ -252,7 +252,7 @@ export function LoginForm({
                   <Label htmlFor="password">Password</Label>
                   <a
                     tabIndex={-1}
-                    href="#"
+                    href="/forgot-password"
                     className="ml-auto text-sm underline-offset-2 underline"
                   >
                     忘记密码
