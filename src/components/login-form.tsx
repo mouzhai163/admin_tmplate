@@ -13,9 +13,10 @@ import z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { authClient } from "@/lib/auth-client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/myUtils";
+import Captcha, { CaptchaRef } from "./Captcha";
 
 // zod校验规则
 const loginSchema = z.object({
@@ -51,6 +52,9 @@ export function LoginForm({
   const [emailNotVerifiedInfo, setEmailNotVerifiedInfo] =
     useState<EmailNotVerifiedInfo | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false); // 邮件发送 loading 状态
+  const [captchaVerified, setCaptchaVerified] = useState(false); // 验证码是否已验证
+  
+  const captchaRef = useRef<CaptchaRef>(null); // 验证码组件引用
 
   const {
     register,
@@ -61,6 +65,15 @@ export function LoginForm({
   });
 
   const onSubmit = async (FormData: loginForm) => {
+    // 检查验证码是否已验证
+    if (!captchaVerified) {
+      toast.error("请先完成滑块验证", {
+        description: "请拖动滑块完成安全验证",
+        duration: 3000,
+      });
+      return;
+    }
+
     try {
       setIsLoading(true);
       setBanInfo(null); // 清除之前的封禁信息
@@ -75,6 +88,10 @@ export function LoginForm({
       setIsLoading(false);
 
       if (error) {
+        // 登录失败后重置验证码
+        setCaptchaVerified(false);
+        captchaRef.current?.refresh();
+        
         // 1:账号密码失败
         if (
           error.status === 401 &&
@@ -112,6 +129,9 @@ export function LoginForm({
           description: "正在跳转到管理后台...",
           duration: 2000,
         });
+        // 重置验证码状态
+        setCaptchaVerified(false);
+        captchaRef.current?.reset();
       }
     } catch (err) {
       setIsLoading(false);
@@ -210,7 +230,8 @@ export function LoginForm({
                             callbackURL: "/verify-success",
                           });
                           toast.success("验证邮件已发送", {
-                            description: "请在邮箱中查看,如果没有请在邮箱中查看垃圾邮件!",
+                            description:
+                              "请在邮箱中查看,如果没有请在邮箱中查看垃圾邮件!",
                             duration: 2000,
                           });
                         } catch (error) {
@@ -322,10 +343,41 @@ export function LoginForm({
           </div>
         </CardContent>
       </Card>
-      <div className="text-muted-foreground *:[a]:hover:text-primary text-center text-xs text-balance *:[a]:underline *:[a]:underline-offset-4">
-        By clicking continue, you agree to our <a href="#">Terms of Service</a>{" "}
-        and <a href="#">Privacy Policy</a>.
-      </div>
+
+      {/* 滑块验证码组件 */}
+      <Captcha
+        ref={captchaRef}
+        onSuccess={() => {
+          setCaptchaVerified(true);
+          toast.success("验证成功", {
+            description: "安全验证已通过",
+            duration: 2000,
+          });
+        }}
+        onFail={(reason) => {
+          setCaptchaVerified(false);
+          toast.error("验证失败", {
+            description: reason,
+            duration: 2000,
+          });
+        }}
+        images={[
+          "/captcha/001.jpg",
+          // 可以添加更多验证图片
+        ]}
+        config={{
+          positionTolerance: 4,
+          minDuration: 300,
+          maxDuration: 30000,
+          maxErrorCount: 5,
+        }}
+        tipText={{
+          default: "向右拖动滑块填充拼图",
+          loading: "加载中...",
+        }}
+        autoRefresh={true}
+        className="w-full max-w-md mx-auto"
+      />
     </div>
   );
 }
