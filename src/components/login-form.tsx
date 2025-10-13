@@ -1,5 +1,4 @@
 "use client";
-
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,14 +7,22 @@ import { Label } from "@/components/ui/label";
 import Image from "next/image";
 import { PasswordInput } from "./m_ui/PasswordInput";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle, Clock, Shield, Mail } from "lucide-react";
+import { AlertCircle, Clock, Shield, Mail, CheckCircle2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { authClient } from "@/lib/auth-client";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
-import { formatDate, logger } from "@/lib/myUtils";
+import { formatDate } from "@/lib/myUtils";
 import Captcha, { CaptchaRef } from "./Captcha";
 import { useRouter } from "next/navigation";
 
@@ -65,6 +72,8 @@ export function LoginForm({
   const [isSendingEmail, setIsSendingEmail] = useState(false); // 邮件发送 loading 状态
   const [captchaVerified, setCaptchaVerified] = useState(false); // 验证码是否已验证
   const [captchaToken, setCaptchaToken] = useState<string>(""); // 验证码token
+  const [showCaptchaDialog, setShowCaptchaDialog] = useState(false); // 控制验证码弹窗
+  const [isHumanVerified, setIsHumanVerified] = useState(false); // 人机验证状态
   
   const captchaRef = useRef<CaptchaRef>(null); // 验证码组件引用
   const route = useRouter();
@@ -353,6 +362,38 @@ export function LoginForm({
                   error={errors.password?.message}
                 />
               </div>
+              
+              {/* 人机验证复选框 */}
+              <div className="flex items-center space-x-2 py-2">
+                <Checkbox
+                  id="human-verify"
+                  checked={isHumanVerified}
+                  onCheckedChange={(checked: boolean | "indeterminate") => {
+                    if (checked && !isHumanVerified) {
+                      // 打开验证码弹窗
+                      setShowCaptchaDialog(true);
+                    }
+                  }}
+                  disabled={isHumanVerified}
+                  className="data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600 transition-all duration-300"
+                />
+                <label
+                  htmlFor="human-verify"
+                  className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer select-none transition-all duration-300 ${
+                    isHumanVerified ? "text-green-600" : ""
+                  }`}
+                >
+                  {isHumanVerified ? (
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 className="h-4 w-4 animate-in zoom-in duration-300" />
+                      人机验证已通过
+                    </span>
+                  ) : (
+                    "点击进行人机验证"
+                  )}
+                </label>
+              </div>
+              
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? "登录中..." : "登录"}
               </Button>
@@ -411,20 +452,45 @@ export function LoginForm({
         </CardContent>
       </Card>
 
-      {/* 滑块验证码组件 */}
-      <Captcha
-        ref={captchaRef}
-        onSuccess={(token) => {
-          setCaptchaVerified(true);
-          setCaptchaToken(token); // 保存验证token
-        }}
-        onFail={(reason) => {
-          setCaptchaVerified(false);
-          setCaptchaToken("");
-        }}
-        autoRefresh={true}
-        className="w-full max-w-md mx-auto"
-      />
+      {/* 验证码弹窗 */}
+      <Dialog open={showCaptchaDialog} onOpenChange={setShowCaptchaDialog}>
+        <DialogContent className="sm:max-w-[360px] p-4">
+          <DialogHeader>
+            <DialogTitle>人机验证</DialogTitle>
+            <DialogDescription>
+              请完成滑块验证以证明您不是机器人
+            </DialogDescription>
+          </DialogHeader>
+          <div className="w-full mt-4">
+            <Captcha
+              ref={captchaRef}
+              onSuccess={(token) => {
+                setCaptchaVerified(true);
+                setCaptchaToken(token);
+                setIsHumanVerified(true);
+                // 延迟关闭弹窗，让用户看到成功状态
+                setTimeout(() => {
+                  setShowCaptchaDialog(false);
+                  toast.success("验证成功", {
+                    description: "人机验证已通过",
+                    duration: 2000,
+                  });
+                }, 500);
+              }}
+              onFail={() => {
+                setCaptchaVerified(false);
+                setCaptchaToken("");
+                toast.error("验证失败", {
+                  description: "请重新尝试",
+                  duration: 2000,
+                });
+              }}
+              autoRefresh={true}
+              className="w-full"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

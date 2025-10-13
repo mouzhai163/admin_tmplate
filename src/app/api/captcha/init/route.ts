@@ -38,11 +38,8 @@ export async function generateFingerprint(ip: string, userAgent: string | null):
 const TTL_SECONDS = 300; // 5 分钟
 export async function POST(request: NextRequest) {
 
-  //先不管清理
   const now = new Date(); // 统一使用一个now变量
   try {
-
-
     // 获取客户端信息
     const clientId = request.headers.get("X-Client-ID");
     const ip = getClientIp(request) || "unknown";
@@ -162,8 +159,6 @@ export async function POST(request: NextRequest) {
     
     // 设置过期时间（Redis 会自动删除过期的 key）
     await redis.expire(`captcha:${clientId}`, TTL_SECONDS);
-    logger.info("创建新 session:", sessionId);
-    
     
     // 返回数据（不包含答案）
     return NextResponse.json({

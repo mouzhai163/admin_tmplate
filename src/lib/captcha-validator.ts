@@ -28,7 +28,6 @@ export async function validateCaptchaToken(token: string | null | undefined): Pr
 
     // 验证原始会话是否存在且已验证
     const sessionData = await redis.hgetall(`captcha:${clientId}`);
-    logger.info("sessionData:", sessionData);
     if (!sessionData || Object.keys(sessionData).length === 0) {
       return false;
     }

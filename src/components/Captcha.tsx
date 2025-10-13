@@ -72,8 +72,12 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(
       let clientId = localStorage.getItem(storageKey);
       
       if (!clientId) {
-        // 生成一个UUID作为客户端识别码
-        clientId = crypto.randomUUID();
+        // 生成一个UUID作为客户端识别码（兼容性更好的方法）
+        clientId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          const r = Math.random() * 16 | 0;
+          const v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
         localStorage.setItem(storageKey, clientId);
       }
       
