@@ -9,7 +9,7 @@ import { logger } from "@/lib/myUtils";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { token, clientId } = body;
+    const { token, clientId, type = "login" } = body;
 
     // 验证参数
     if (!clientId) {
@@ -19,12 +19,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 要删除的 keys
-    const keysToDelete = [`captcha:${clientId}`];
+    // 要删除的 keys，包含类型
+    const keysToDelete = [`captcha:${type}:${clientId}`];
     
     // 如果有 token，也删除反向索引
     if (token) {
-      keysToDelete.push(`verified:${token}`);
+      keysToDelete.push(`verified:${type}:${token}`);
     }
 
     // 批量删除

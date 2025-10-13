@@ -35,6 +35,10 @@ interface CaptchaProps {
    * 是否自动刷新
    */
   autoRefresh?: boolean;
+  /**
+   * 验证码类型：login 或 signup
+   */
+  type?: "login" | "signup";
 }
 
 // 组件暴露的方法
@@ -58,7 +62,7 @@ export interface CaptchaRef {
 }
 
 const Captcha = forwardRef<CaptchaRef, CaptchaProps>(
-  ({ onSuccess, onFail, className = "", autoRefresh = true }, ref) => {
+  ({ onSuccess, onFail, className = "", autoRefresh = true, type = "login" }, ref) => {
     // 状态管理
     const [sessionId, setSessionId] = useState<string>("");
     const [verified, setVerified] = useState<boolean>(false);
@@ -97,6 +101,7 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(
           headers: {
             "Content-Type": "application/json",
             "X-Client-ID": clientId,  // 发送客户端ID
+            "X-Captcha-Type": type,   // 发送验证码类型
           },
         });
         
@@ -141,13 +146,12 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(
           return Promise.reject(reason);
         }
 
-        
-
         const response = await fetch("/api/captcha/verify", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "X-Client-ID": getClientId(),  // 发送客户端ID
+            "X-Captcha-Type": type,        // 发送验证码类型
           },
           body: JSON.stringify({
             sessionId,
@@ -177,7 +181,6 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(
               }, 1000);
             }
           }
-          
           return Promise.reject(reason);
         }
 

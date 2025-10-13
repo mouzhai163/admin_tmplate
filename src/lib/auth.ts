@@ -18,10 +18,10 @@ export const auth = betterAuth({
     autoSignIn: false,
     // 用户必须先验证邮箱才能登录
     requireEmailVerification: true,
-    sendResetPassword: async ({ user, url, token }, request) => {
+    sendResetPassword: async ({ user, url }) => {
       await mailer.sendPasswordResetEmail(user.email, url, user.name);
     },
-    onPasswordReset: async ({ user }, request) => {
+    onPasswordReset: async ({ user }) => {
       console.log("密码重置成功:", user.email);
     },
   },
@@ -98,7 +98,23 @@ export const auth = betterAuth({
         const captchaToken = ctx.body?.captchaToken;
         logger.info("captchaToken:", captchaToken);
         // 验证验证码 token
-        const isValidCaptcha = await validateCaptchaToken(captchaToken);
+        const isValidCaptcha = await validateCaptchaToken(captchaToken, "login");
+        if (!isValidCaptcha) {
+          throw new APIError("BAD_REQUEST", {
+            error: {
+              message: "验证码无效或已过期，请重新验证",
+              code: "INVALID_CAPTCHA",
+            },
+          });
+        }
+      }
+      
+      // 在邮箱注册时验证验证码
+      if (path === "/sign-up/email") {
+        const captchaToken = ctx.body?.captchaToken;
+        logger.info("signup captchaToken:", captchaToken);
+        // 验证验证码 token
+        const isValidCaptcha = await validateCaptchaToken(captchaToken, "signup");
         if (!isValidCaptcha) {
           throw new APIError("BAD_REQUEST", {
             error: {

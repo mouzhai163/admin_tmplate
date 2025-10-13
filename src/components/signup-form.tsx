@@ -10,7 +10,8 @@ import { useRouter } from "next/navigation";
 import { PasswordInput } from "./m_ui/PasswordInput";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import CaptchaVerification, { CaptchaVerificationRef } from "./m_ui/CaptchaVerification";
 
 // zod校验规则
 const signUpSchema = z
@@ -39,6 +40,7 @@ type signUpForm = z.infer<typeof signUpSchema>;
 export function SignupForm() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false); // 添加 loading 状态
+  const captchaVerificationRef = useRef<CaptchaVerificationRef>(null); // 验证码组件引用
 
   // 检测用户是否已登录
   useEffect(() => {
@@ -60,33 +62,62 @@ export function SignupForm() {
   });
 
   const onSubmit = async (FormData: signUpForm) => {
+    // 检查验证码是否已验证
+    if (!captchaVerificationRef.current?.isVerified()) {
+      toast.error("请先完成人机验证", {
+        description: "请点击复选框完成安全验证",
+        duration: 3000,
+      });
+      return;
+    }
+    
+    const captchaToken = captchaVerificationRef.current.getToken();
+
     try {
       setIsLoading(true); // 开始 loading
 
-      // 调用 better-auth 注册方法
-      const { data, error } = await authClient.signUp.email({
-        name: FormData.name,
-        email: FormData.email,
-        password: FormData.password,
+      // 创建自定义的请求来传递额外数据
+      const response = await fetch("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: FormData.name,
+          email: FormData.email,
+          password: FormData.password,
+          captchaToken: captchaToken,
+        }),
       });
 
-      // 手动处理跳转逻辑
-      if (data && !error) {
-        toast.success("注册成功!", {
-          description: "请登录时验证邮箱!",
-          duration: 4000,
-        });
+      const result = await response.json();
 
-        setTimeout(() => {
-          router.replace("/login");
-        }, 1000);
-        // 注意: 跳转后不需要设置 setIsLoading(false)
-      } else if (error) {
-        setIsLoading(false); // 错误时停止 loading
-
+      // 处理响应
+      setIsLoading(false);
+      
+      if (!response.ok || result.code) {
+        // 这是一个错误响应
+        const error = result;
+        
+        // 注册失败后清理 Redis 记录并重置验证码
+        if (captchaToken && captchaVerificationRef.current) {
+          const clientId = captchaVerificationRef.current.getClientId();
+          fetch("/api/captcha/clear", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              token: captchaToken,
+              clientId: clientId,
+              type: "signup",
+            }),
+          }).catch(err => {});
+        }
+        
+        captchaVerificationRef.current?.reset();
+        
         let msg = "";
         switch (error.code) {
-          case "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL":
+          case "USER_ALREADY_EXISTS":
             msg = "邮箱已被注册!";
             break;
           case "INVALID_PASSWORD":
@@ -98,6 +129,9 @@ export function SignupForm() {
           case "RATE_LIMITED":
             msg = "操作太频繁，请稍后再试";
             break;
+          case "INVALID_CAPTCHA":
+            msg = "验证码无效或已过期，请重新验证";
+            break;
           default:
             msg = error.message || "未知错误!，请重试";
             break;
@@ -106,10 +140,23 @@ export function SignupForm() {
           description: msg,
           duration: 4000,
         });
+        return;
       }
+
+      // 注册成功
+      toast.success("注册成功!", {
+        description: "请登录时验证邮箱!",
+        duration: 4000,
+      });
+      
+      // 重置验证码状态
+      captchaVerificationRef.current?.reset();
+      
+      setTimeout(() => {
+        router.replace("/login");
+      }, 1000);
     } catch (err) {
       setIsLoading(false); // 异常时停止 loading
-      console.error("注册异常:", err);
       toast.error("系统错误", {
         description: "注册过程发生异常，请稍后重试",
         duration: 4000,
@@ -177,6 +224,16 @@ export function SignupForm() {
         register={register}
         error={errors.confirm?.message}
         disabled={isLoading}
+      />
+      
+      {/* 人机验证组件 */}
+      <CaptchaVerification
+        ref={captchaVerificationRef}
+        type="signup"
+        checkboxText="点击进行注册验证"
+        verifiedText="验证通过，可以注册"
+        dialogTitle="注册验证"
+        dialogDescription="请完成滑块验证以继续注册"
       />
 
       <Button type="submit" className="w-full" disabled={isLoading}>

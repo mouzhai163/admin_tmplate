@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
   try {
     // 获取客户端信息
     const clientId = request.headers.get("X-Client-ID");
+    const type = request.headers.get("X-Captcha-Type") || "login"; // 从 header 获取类型，默认为 login
     const ip = getClientIp(request) || "unknown";
     const userAgent = request.headers.get("user-agent");
 
@@ -53,11 +54,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 验证 type 参数
+    if (!["login", "signup"].includes(type)) {
+      return NextResponse.json(
+        { success: false, error: "无效的验证码类型" },
+        { status: 400 }
+      );
+    }
+
     const fingerprint = await generateFingerprint(ip, userAgent);
 
 
-    // 从 Redis 获取会话数据
-    const sessionData = await redis.hgetall(`captcha:${clientId}`);
+    // 从 Redis 获取会话数据，使用带类型的 key
+    const redisKey = `captcha:${type}:${clientId}`;
+    const sessionData = await redis.hgetall(redisKey);
     
     // 如果存在会话数据，转换类型
     let existingSession: CaptchaSession | null = null;
@@ -77,6 +87,7 @@ export async function POST(request: NextRequest) {
           expiresAt: sessionData.expiresAt as string,
           verified: sessionData.verified === 'true',
           verificationToken: sessionData.verificationToken as string || '',
+          type: sessionData.type as string || 'login',
         };
       }
     }
@@ -120,9 +131,9 @@ export async function POST(request: NextRequest) {
       };
       
       // 使用 HSET 更新所有字段
-      await redis.hset(`captcha:${clientId}`, updatedSession);
+      await redis.hset(redisKey, updatedSession);
       // 重新设置过期时间
-      await redis.expire(`captcha:${clientId}`, TTL_SECONDS);
+      await redis.expire(redisKey, TTL_SECONDS);
       
       return NextResponse.json({
         success: true,
@@ -152,13 +163,14 @@ export async function POST(request: NextRequest) {
       expiresAt: expiresAt.toISOString(),
       verified: 'false',
       verificationToken: '',
+      type: type, // 存储验证码类型
     };
     
     // 使用 HSET 存储所有字段
-    await redis.hset(`captcha:${clientId}`, sessionDataForRedis);
+    await redis.hset(redisKey, sessionDataForRedis);
     
     // 设置过期时间（Redis 会自动删除过期的 key）
-    await redis.expire(`captcha:${clientId}`, TTL_SECONDS);
+    await redis.expire(redisKey, TTL_SECONDS);
     
     // 返回数据（不包含答案）
     return NextResponse.json({

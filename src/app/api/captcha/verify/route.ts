@@ -23,7 +23,6 @@ function validateCaptcha(
   if (Math.abs(data.x - session.puzzleX) > positionTolerance) {
     return { isValid: false, reason: "位置不正确" };
   }
-
   // 2. 时长验证
   if (data.duration < 300) {
     return { isValid: false, reason: "操作过快" };
@@ -57,6 +56,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { sessionId, x, y, duration, trail } = body;
+    const type = request.headers.get("X-Captcha-Type") || "login"; // 从 header 获取类型
 
     // 验证参数
     if (!sessionId || typeof x !== "number" || typeof y !== "number") {
@@ -81,8 +81,17 @@ export async function POST(request: NextRequest) {
     //获取用户ip+ua生成指纹
     const fingerprint = await generateFingerprint(ip, userAgent);
 
-    // 从 Redis 获取会话数据
-    const sessionData = await redis.hgetall(`captcha:${clientId}`);
+    // 验证 type 参数
+    if (!["login", "signup"].includes(type)) {
+      return NextResponse.json(
+        { success: false, error: "无效的验证码类型" },
+        { status: 400 }
+      );
+    }
+
+    // 从 Redis 获取会话数据，使用带类型的 key
+    const redisKey = `captcha:${type}:${clientId}`;
+    const sessionData = await redis.hgetall(redisKey);
     
     // 转换并验证会话数据
     let session: CaptchaSession | null = null;
@@ -143,27 +152,28 @@ export async function POST(request: NextRequest) {
     };
     
     // 更新 Redis 中的数据
-    await redis.hset(`captcha:${clientId}`, updatedSession);
+    await redis.hset(redisKey, updatedSession);
     
     const tokenTTL = 90; // 90秒有效期
     const expiresAt = new Date(new Date().getTime() + tokenTTL * 1000).toISOString();
     
-    // 创建反向索引，用于验证token 
-    await redis.hset(`verified:${token}`, {
+    // 创建反向索引，用于验证token，也包含类型信息 
+    await redis.hset(`verified:${type}:${token}`, {
       clientId,
+      type,
       createdAt: new Date().toISOString(),
       expiresAt: expiresAt,
     });
     
     // 设置过期时间（传入秒数，不是时间戳）
-    await redis.expire(`captcha:${clientId}`, tokenTTL);
-    await redis.expire(`verified:${token}`, tokenTTL);
+    await redis.expire(redisKey, tokenTTL);
+    await redis.expire(`verified:${type}:${token}`, tokenTTL);
 
     return NextResponse.json({
       success: true,
       data: { token },
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { success: false, error: "验证失败" },
       { status: 500 }
