@@ -15,8 +15,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { authClient } from "@/lib/auth-client";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
-import { formatDate } from "@/lib/myUtils";
+import { formatDate, logger } from "@/lib/myUtils";
 import Captcha, { CaptchaRef } from "./Captcha";
+import { useRouter } from "next/navigation";
 
 // zod校验规则
 const loginSchema = z.object({
@@ -43,6 +44,16 @@ interface EmailNotVerifiedInfo {
   email: string;
 }
 
+// 错误代码枚举
+const ErrorCodes = {
+  INVALID_EMAIL_OR_PASSWORD: "INVALID_EMAIL_OR_PASSWORD",
+  INVALID_CAPTCHA: "INVALID_CAPTCHA",
+  EMAIL_NOT_VERIFIED: "EMAIL_NOT_VERIFIED",
+  USER_BANNED: "USER_BANNED",
+} as const;
+
+type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes];
+
 export function LoginForm({
   className,
   ...props
@@ -53,8 +64,10 @@ export function LoginForm({
     useState<EmailNotVerifiedInfo | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false); // 邮件发送 loading 状态
   const [captchaVerified, setCaptchaVerified] = useState(false); // 验证码是否已验证
+  const [captchaToken, setCaptchaToken] = useState<string>(""); // 验证码token
   
   const captchaRef = useRef<CaptchaRef>(null); // 验证码组件引用
+  const route = useRouter();
 
   const {
     register,
@@ -66,7 +79,7 @@ export function LoginForm({
 
   const onSubmit = async (FormData: loginForm) => {
     // 检查验证码是否已验证
-    if (!captchaVerified) {
+    if (!captchaVerified || !captchaToken) {
       toast.error("请先完成滑块验证", {
         description: "请拖动滑块完成安全验证",
         duration: 3000,
@@ -79,60 +92,114 @@ export function LoginForm({
       setBanInfo(null); // 清除之前的封禁信息
       setEmailNotVerifiedInfo(null); // 清除之前的邮箱未验证信息
 
-      const { data, error } = await authClient.signIn.email({
-        email: FormData.email,
-        password: FormData.password,
-        callbackURL: "/",
+      // 创建自定义的请求来传递额外数据
+      const response = await fetch("/api/auth/sign-in/email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: FormData.email,
+          password: FormData.password,
+          captchaToken: captchaToken,
+        }),
       });
 
+      const result = await response.json();
+      
+      // 处理响应 - better-auth 直接返回错误对象，不是包装在 error 字段中
       setIsLoading(false);
-
-      if (error) {
-        // 登录失败后重置验证码
+      
+      if (!response.ok || result.code) {
+        // 这是一个错误响应
+        const error = result;
+        // 登录失败后清理 Redis 记录并重置验证码
         setCaptchaVerified(false);
+        
+        // 调用清理 API 删除 Redis 中的验证记录
+        if (captchaToken && captchaRef.current) {
+          const clientId = captchaRef.current.getClientId();
+          fetch("/api/captcha/clear", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              token: captchaToken,
+              clientId: clientId,
+            }),
+          })
+        }
+        
+        setCaptchaToken("");
         captchaRef.current?.refresh();
         
-        // 1:账号密码失败
-        if (
-          error.status === 401 &&
-          error.code === "INVALID_EMAIL_OR_PASSWORD"
-        ) {
+        // 使用对象映射优化错误处理
+        const errorHandlers: Record<ErrorCode, () => void> = {
+          [ErrorCodes.INVALID_EMAIL_OR_PASSWORD]: () => {
+            toast.error("登录失败", {
+              description: "账号或者密码错误!",
+              duration: 4000,
+            });
+          },
+          
+          [ErrorCodes.INVALID_CAPTCHA]: () => {
+            toast.error("验证失败", {
+              description: "验证码无效或已过期，请重新验证",
+              duration: 4000,
+            });
+          },
+          
+          [ErrorCodes.EMAIL_NOT_VERIFIED]: () => {
+            setEmailNotVerifiedInfo({ email: FormData.email });
+          },
+          
+          [ErrorCodes.USER_BANNED]: () => {
+            try {
+              const banData = error.message ? JSON.parse(error.message) : {};
+              setBanInfo(banData);
+            } catch (e) {
+              console.error("解析封禁信息失败:", e);
+              setBanInfo({ reason: "账号已被封禁" });
+            }
+          },
+        };
+        
+        // 执行对应的错误处理器
+        const errorCode = error.code as ErrorCode;
+        
+        const handler = errorHandlers[errorCode];
+        if (handler) {
+          handler();
+        } else {
+          // 默认错误处理 - 显示更友好的错误信息
+          const defaultMessages: Record<string, string> = {
+            "BAD_REQUEST": "请求参数错误",
+            "UNAUTHORIZED": "未授权访问",
+            "FORBIDDEN": "访问被拒绝",
+            "NOT_FOUND": "资源不存在",
+            "INTERNAL_SERVER_ERROR": "服务器内部错误",
+          };
+          
           toast.error("登录失败", {
-            description: "账号或者密码错误!",
+            description: error.message || defaultMessages[error.status] || "未知错误，请稍后重试",
             duration: 4000,
           });
-          return;
         }
-
-        // 2:邮箱未验证
-        if (error.status === 403 && error.code === "EMAIL_NOT_VERIFIED") {
-          setEmailNotVerifiedInfo({ email: FormData.email });
-          return;
-        }
-
-        // 3:账号被封禁
-        if (error.status === 403 && error.code === "USER_BANNED") {
-          setBanInfo(JSON.parse(error.message || "{}"));
-          return;
-        }
-        // 4. 其他登录错误
-        toast.error("登录失败", {
-          description: error.message,
-          duration: 4000,
-        });
         return;
       }
 
-      if (data) {
-        // 登录成功 - 使用 Toast
-        toast.success("登录成功", {
-          description: "正在跳转到管理后台...",
-          duration: 2000,
-        });
-        // 重置验证码状态
-        setCaptchaVerified(false);
-        captchaRef.current?.reset();
-      }
+      // 登录成功
+      toast.success("登录成功", {
+        description: "正在跳转到管理后台...",
+        duration: 2000,
+      });
+      // 重置验证码状态
+      setCaptchaVerified(false);
+      setCaptchaToken("");
+      captchaRef.current?.reset();
+      //等待2秒跳转到首页
+      setTimeout(() => {
+        route.replace("/");
+      }, 2000);
     } catch (err) {
       setIsLoading(false);
       console.error("登录异常:", err);
@@ -245,7 +312,7 @@ export function LoginForm({
                         }
                       }}
                     >
-                      {isSendingEmail ? "发送中..." : "重新发送验证邮件"}{" "}
+                      {isSendingEmail ? "发送中..." : "发送验证邮件"}{" "}
                       {/* 新增: 动态文本 */}
                     </Button>
                   </AlertDescription>
@@ -347,33 +414,13 @@ export function LoginForm({
       {/* 滑块验证码组件 */}
       <Captcha
         ref={captchaRef}
-        onSuccess={() => {
+        onSuccess={(token) => {
           setCaptchaVerified(true);
-          toast.success("验证成功", {
-            description: "安全验证已通过",
-            duration: 2000,
-          });
+          setCaptchaToken(token); // 保存验证token
         }}
         onFail={(reason) => {
           setCaptchaVerified(false);
-          toast.error("验证失败", {
-            description: reason,
-            duration: 2000,
-          });
-        }}
-        images={[
-          "/captcha/001.jpg",
-          // 可以添加更多验证图片
-        ]}
-        config={{
-          positionTolerance: 4,
-          minDuration: 300,
-          maxDuration: 30000,
-          maxErrorCount: 5,
-        }}
-        tipText={{
-          default: "向右拖动滑块填充拼图",
-          loading: "加载中...",
+          setCaptchaToken("");
         }}
         autoRefresh={true}
         className="w-full max-w-md mx-auto"

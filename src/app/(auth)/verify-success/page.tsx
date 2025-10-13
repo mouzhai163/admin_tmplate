@@ -19,7 +19,6 @@ const getErrorMessage = (error: string) => {
   }
 };
 
-// ✅ 将主要逻辑提取为独立组件
 function VerifySuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -29,23 +28,18 @@ function VerifySuccessContent() {
 
   // 第一个 useEffect: 初始化状态
   useEffect(() => {
+    
     const error = searchParams.get("error");
-    const verified = searchParams.get("verified");
     
-    // ✅ 检查是否直接访问 (没有任何参数)
-    if (!error && !verified) {
-      router.replace("/login");
-      return;
-    }
-    
+    // 如果有错误参数，显示错误
     if (error) {
       setStatus("error");
       setMessage(getErrorMessage(error));
-    } else {
+      return;
+    }
       setStatus("success");
       setMessage("您的邮箱已成功验证，现在可以登录了");
-    }
-  }, [searchParams, router]);
+  }, [searchParams]);
 
   // 第二个 useEffect: 处理倒计时和跳转
   useEffect(() => {

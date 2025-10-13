@@ -1,5 +1,7 @@
 import { toZonedTime, format } from "date-fns-tz";
-
+import { consola } from "consola";
+//日志打印组件
+export const logger = consola.withTag("MZ-APP");
 /**
  * 获取客户端IP
  * @param req 请求对象
@@ -66,3 +68,5 @@ export const formatDate = (date: Date) => {
   const seconds = String(date.getSeconds()).padStart(2, '0');
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
+
+

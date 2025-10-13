@@ -8,6 +8,8 @@ import * as schema from "@/db/schema/auth-schema";
 import { websiteInfo } from "@/db/schema/webSite_info";
 import mailer from "./mailer";
 import { nextCookies } from "better-auth/next-js";
+import { validateCaptchaToken } from "./captcha-validator";
+import { logger } from "./myUtils";
 
 export const auth = betterAuth({
   emailAndPassword: {
@@ -16,14 +18,14 @@ export const auth = betterAuth({
     autoSignIn: false,
     // 用户必须先验证邮箱才能登录
     requireEmailVerification: true,
-    sendResetPassword:async({user, url, token}, request) => {
+    sendResetPassword: async ({ user, url, token }, request) => {
       await mailer.sendPasswordResetEmail(user.email, url, user.name);
     },
-    onPasswordReset:async({ user }, request) => {
-      console.log('密码重置成功:', user.email);
+    onPasswordReset: async ({ user }, request) => {
+      console.log("密码重置成功:", user.email);
     },
   },
-  
+
   database: drizzleAdapter(db, {
     provider: "mysql", // 或 "mongodb", "postgresql", ...等
     schema, //需要你显式传入包含所有表的 schema 对象（含 user 表）
@@ -38,27 +40,32 @@ export const auth = betterAuth({
     updateAge: 60 * 60 * 24, // 1 天（每过一天更新会话过期时间）
   },
   emailVerification: {
-    sendVerificationEmail: async ({ user, url}) => {
+    sendVerificationEmail: async ({ user, url }) => {
       // 创建一个超时 Promise
       const timeout = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('邮件函数 - 邮件发送超时!请重试!')), 10000); // 10秒超时
+        setTimeout(
+          () => reject(new Error("邮件函数 - 邮件发送超时!请重试!")),
+          10000
+        ); // 10秒超时
       });
       // 替换掉回调网页
-      // url = url.replace("callbackURL=/","callbackURL=/verify-success")
+      url = url.replace("callbackURL=/","callbackURL=/verify-success")
       // 邮件发送 Promise
-      const sendEmail = mailer.sendVerificationEmail(user.email, url, user.name);
-  
+      const sendEmail = mailer.sendVerificationEmail(
+        user.email,
+        url,
+        user.name
+      );
+
       try {
         // 使用 Promise.race 竞速,哪个先完成就用哪个
         await Promise.race([sendEmail, timeout]);
-        console.log('邮件函数 - 验证邮件发送成功:', user.email);
+        console.log("邮件函数 - 验证邮件发送成功:", user.email);
       } catch (error) {
         // 超时或发送失败,只记录错误,不影响注册流程
-        console.error('邮件函数 - 验证邮件发送失败:', error);
+        console.error("邮件函数 - 验证邮件发送失败:", error);
       }
     },
-    // sendOnSignIn:true,
-    // sendOnSignUp: true,
     // 验证后自动登录
     // autoSignInAfterVerification : false,
     // 验证邮件过期时间
@@ -81,6 +88,28 @@ export const auth = betterAuth({
   },
   hooks: {
     /**
+     * 登录前验证 (before hook 在密码验证前执行)
+     */
+    before: createAuthMiddleware(async (ctx) => {
+      const path = (ctx.path || "").replace(/\/+$/, "");
+
+      // 在邮箱登录时验证验证码
+      if (path === "/sign-in/email") {
+        const captchaToken = ctx.body?.captchaToken;
+        logger.info("captchaToken:", captchaToken);
+        // 验证验证码 token
+        const isValidCaptcha = await validateCaptchaToken(captchaToken);
+        if (!isValidCaptcha) {
+          throw new APIError("BAD_REQUEST", {
+            error: {
+              message: "验证码无效或已过期，请重新验证",
+              code: "INVALID_CAPTCHA",
+            },
+          });
+        }
+      }
+    }),
+    /**
      * 登录后统一处理逻辑 (after hook 在密码验证成功后执行)
      * 执行顺序:
      *  1. 检查用户是否被封禁 (密码验证成功后才检查,避免信息泄露)
@@ -89,7 +118,7 @@ export const auth = betterAuth({
     after: createAuthMiddleware(async (ctx) => {
       // 统一处理 path: 去掉结尾的斜杠
       const path = (ctx.path || "").replace(/\/+$/, "");
-      
+
       // ========== 第一步: 封禁检查 ==========
       // 只在邮箱登录接口执行封禁检查
       if (path === "/sign-in/email") {
@@ -126,7 +155,9 @@ export const auth = betterAuth({
             // 仍然处于封禁中 => 删除刚创建的 session 并返回封禁信息
             const currentUser = ctx.context?.newSession?.user;
             if (currentUser) {
-              await db.delete(session).where(eq(session.userId, currentUser.id));
+              await db
+                .delete(session)
+                .where(eq(session.userId, currentUser.id));
             }
 
             // 构建详细的封禁信息
@@ -170,7 +201,7 @@ export const auth = betterAuth({
         // 启用了单点登录 => 保留当前 session,删除该用户的其他 session
         const currentSession = ctx.context.newSession?.session;
         const currentUser = ctx.context.newSession?.user;
-        
+
         if (currentSession && currentUser) {
           await db
             .delete(session)
@@ -187,5 +218,5 @@ export const auth = betterAuth({
       return;
     }),
   },
-  plugins: [nextCookies()]
+  plugins: [nextCookies()],
 });

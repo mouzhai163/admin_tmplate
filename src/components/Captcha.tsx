@@ -4,8 +4,6 @@ import { useState, useImperativeHandle, forwardRef, useRef } from "react";
 import SliderCaptcha from "rc-slider-captcha";
 import type { ActionType } from "rc-slider-captcha";
 // import "rc-slider-captcha/dist/index.css";
-import { createPuzzle } from "create-puzzle";
-import { sleep } from "ut2";
 import { toast } from "sonner";
 
 // 验证参数类型
@@ -22,40 +20,13 @@ type VerifyParam = {
 // 组件属性类型
 interface CaptchaProps {
   /**
-   * 验证成功的回调
+   * 验证成功的回调，返回验证token
    */
-  onSuccess?: () => void;
+  onSuccess?: (token: string) => void;
   /**
    * 验证失败的回调
    */
   onFail?: (reason: string) => void;
-  /**
-   * 自定义验证图片列表
-   */
-  images?: string[];
-  /**
-   * 自定义配置
-   */
-  config?: {
-    positionTolerance?: number; // 位置误差容忍度（默认5px）
-    minDuration?: number; // 最小操作时长（默认300ms）
-    maxDuration?: number; // 最大操作时长（默认30000ms）
-    minTrailPoints?: number; // 最少轨迹点数（默认5）
-    maxYDeviation?: number; // 最大Y轴偏移（默认40px）
-    maxTrailJump?: number; // 轨迹最大跳跃（默认50px）
-    maxErrorCount?: number; // 最大错误次数（默认5）
-  };
-  /**
-   * 自定义提示文本
-   */
-  tipText?: {
-    default?: string;
-    loading?: string;
-    moving?: string;
-    verifying?: string;
-    success?: string;
-    error?: string;
-  };
   /**
    * 自定义样式
    */
@@ -80,189 +51,67 @@ export interface CaptchaRef {
    * 获取验证状态
    */
   isVerified: () => boolean;
+  /**
+   * 获取客户端ID
+   */
+  getClientId: () => string;
 }
 
 const Captcha = forwardRef<CaptchaRef, CaptchaProps>(
-  (
-    {
-      onSuccess,
-      onFail,
-      images = ["/captcha/001.jpg"],
-      config = {},
-      tipText = {},
-      className = "",
-      autoRefresh = true,
-    },
-    ref
-  ) => {
+  ({ onSuccess, onFail, className = "", autoRefresh = true }, ref) => {
     // 状态管理
-    const [puzzleX, setPuzzleX] = useState<number>(-1); // 拼图实际位置，初始值-1表示未生成
-    const [verified, setVerified] = useState<boolean>(false); // 是否已验证
-    const sliderRef = useRef<ActionType | undefined>(undefined); // SliderCaptcha 实例引用
-
-    // 合并配置
-    const mergedConfig = {
-      positionTolerance: 1,
-      minDuration: 300,
-      maxDuration: 30000,
-      minTrailPoints: 5,
-      maxYDeviation: 40,
-      maxTrailJump: 50,
-      maxErrorCount: 5,
-      ...config,
-    };
-
-    // 合并提示文本
-    const mergedTipText = {
-      default: "向右拖动滑块填充拼图",
-      loading: "加载中...",
-      ...tipText,
-    };
+    const [sessionId, setSessionId] = useState<string>("");
+    const [verified, setVerified] = useState<boolean>(false);
+    const sliderRef = useRef<ActionType | undefined>(undefined);
 
     /**
-     * 安全的滑块验证函数
-     * 多维度检测防止机器人和恶意攻击
+     * 获取或生成客户端唯一ID
      */
-    const verifySliderCaptcha = async (data: VerifyParam): Promise<void> => {
-      try {
-        // 如果已经验证成功，直接返回
-        if (verified) {
-          return Promise.resolve();
-        }
-        
-        // 1. 检查错误次数限制（防止暴力破解）
-        if (data.errorCount >= mergedConfig.maxErrorCount) {
-          const reason = "错误次数过多，请刷新后重试";
-          toast.error("验证失败", {
-            description: reason,
-            duration: 3000,
-          });
-          onFail?.(reason);
-          return Promise.reject(reason);
-        }
-
-        // 2. 位置验证（允许一定误差）
-        // 确保拼图位置已经生成
-        if (puzzleX === -1) {
-          const reason = "验证码未正确加载";
-          onFail?.(reason);
-          return Promise.reject(reason);
-        }
-        
-        
-        // 直接比较 data.x 和 puzzleX
-        const isPositionValid =
-          Math.abs(data.x - puzzleX) <= mergedConfig.positionTolerance;
-          
-
-        // 3. 时长验证（防止机器人瞬间完成）
-        const isDurationValid =
-          data.duration >= mergedConfig.minDuration &&
-          data.duration <= mergedConfig.maxDuration;
-
-        // 4. 轨迹验证（检查是否有合理的移动轨迹）
-        const isTrailValid =
-          data.trail && data.trail.length >= mergedConfig.minTrailPoints;
-
-        // 5. Y 轴移动验证（人类操作会有轻微抖动，机器人通常是直线）
-        const isYMovementValid =
-          Math.abs(data.y) <= mergedConfig.maxYDeviation;
-
-        // 6. 轨迹平滑度验证（检测是否是自然的移动）
-        let isTrailSmooth = true;
-        if (data.trail && data.trail.length > 1) {
-          for (let i = 1; i < data.trail.length; i++) {
-            const dx = Math.abs(data.trail[i][0] - data.trail[i - 1][0]);
-            if (dx > mergedConfig.maxTrailJump) {
-              isTrailSmooth = false;
-              break;
-            }
-          }
-        }
-
-
-        // 综合判断
-        if (!isPositionValid) {
-          const reason = "位置不正确";
-          onFail?.(reason);
-          return Promise.reject(reason);
-        }
-
-        if (!isDurationValid) {
-          const reason =
-            data.duration < mergedConfig.minDuration
-              ? "操作过快"
-              : "操作超时";
-          onFail?.(reason);
-          return Promise.reject(reason);
-        }
-
-        if (!isTrailValid) {
-          const reason = "操作异常";
-          onFail?.(reason);
-          return Promise.reject(reason);
-        }
-
-        if (!isYMovementValid) {
-          const reason = "操作异常";
-          onFail?.(reason);
-          return Promise.reject(reason);
-        }
-
-        if (!isTrailSmooth) {
-          const reason = "操作异常";
-          onFail?.(reason);
-          return Promise.reject(reason);
-        }
-
-        // 模拟延迟（让验证看起来更真实）
-        await sleep(300);
-
-        // 验证成功
-        // 防止多次触发成功回调
-        if (!verified) {
-          setVerified(true);
-          onSuccess?.();
-        }
-        return Promise.resolve();
-      } catch (error) {
-        // 捕获意外错误
-        const reason = "验证过程出错";
-        onFail?.(reason);
-        return Promise.reject(reason);
+    const getClientId = (): string => {
+      const storageKey = 'captcha_client_id';
+      let clientId = localStorage.getItem(storageKey);
+      
+      if (!clientId) {
+        // 生成一个UUID作为客户端识别码
+        clientId = crypto.randomUUID();
+        localStorage.setItem(storageKey, clientId);
       }
+      
+      return clientId;
     };
 
+
     /**
-     * 生成拼图请求
+     * 初始化验证码
      */
-    const handlePuzzleRequest = async () => {
+    const initCaptcha = async () => {
       try {
-        // 检查图片数组是否为空
-        if (!images || images.length === 0) {
-          throw new Error("没有可用的验证图片");
-        }
+        const clientId = getClientId();
         
-        // 随机选择一张图片
-        const randomImage = images[Math.floor(Math.random() * images.length)];
-
-        const puzzle = await createPuzzle(randomImage, {
-          width: 60, // 拼图块宽度
-          height: 60, // 拼图块高度
-          bgWidth: 320, // 背景宽度
-          bgHeight: 160, // 背景高度
+        const response = await fetch("/api/captcha/init", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Client-ID": clientId,  // 发送客户端ID
+          },
         });
+        
+        const result = await response.json();
 
-        // 保存拼图的实际 x 位置
-        setPuzzleX(puzzle.x);
-        setVerified(false); // 重置验证状态
+
+        if (!result.success) {
+          throw new Error(result.error || "初始化失败");
+        }
+
+        setSessionId(result.data.sessionId);
+        setVerified(false);
 
         return {
-          bgUrl: puzzle.bgUrl,
-          puzzleUrl: puzzle.puzzleUrl,
+          bgUrl: result.data.bgUrl,
+          puzzleUrl: result.data.puzzleUrl,
         };
       } catch (error) {
-        // 错误处理，提供更友好的错误信息
+        console.error("初始化验证码失败:", error);
         toast.error("验证码加载失败", {
           description: "请检查网络连接或刷新重试",
           duration: 3000,
@@ -271,31 +120,106 @@ const Captcha = forwardRef<CaptchaRef, CaptchaProps>(
       }
     };
 
+    /**
+     * 验证滑块
+     */
+    const verifyCaptcha = async (data: VerifyParam): Promise<void> => {
+      try {
+        // 如果已经验证成功，直接返回
+        if (verified) {
+          return Promise.resolve();
+        }
+
+        // 确保有会话ID
+        if (!sessionId) {
+          const reason = "验证码未正确加载";
+          onFail?.(reason);
+          return Promise.reject(reason);
+        }
+
+        
+
+        const response = await fetch("/api/captcha/verify", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Client-ID": getClientId(),  // 发送客户端ID
+          },
+          body: JSON.stringify({
+            sessionId,
+            x: data.x,
+            y: data.y,
+            duration: data.duration,
+            trail: data.trail,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+          const reason = result.error || "验证失败";
+          onFail?.(reason);
+          
+          // 如果是尝试次数过多，需要刷新
+          if (reason.includes("尝试次数过多")) {
+            toast.error("验证失败", {
+              description: reason,
+              duration: 3000,
+            });
+            // 自动刷新
+            if (autoRefresh) {
+              setTimeout(() => {
+                sliderRef.current?.refresh?.(true);
+              }, 1000);
+            }
+          }
+          
+          return Promise.reject(reason);
+        }
+
+        // 验证成功
+        setVerified(true);
+        const token = result.data.token;
+        onSuccess?.(token);
+        return Promise.resolve();
+      } catch (error) {
+        console.error("验证失败:", error);
+        const reason = "验证过程出错";
+        onFail?.(reason);
+        return Promise.reject(reason);
+      }
+    };
+
     // 暴露给父组件的方法
     useImperativeHandle(ref, () => ({
       refresh: () => {
         if (sliderRef.current?.refresh) {
-          sliderRef.current.refresh(true); // 重置错误计数
+          sliderRef.current.refresh(true);
           setVerified(false);
+          setSessionId("");
         }
       },
       reset: () => {
         setVerified(false);
-        setPuzzleX(-1); // 重置为未生成状态
+        setSessionId("");
       },
       isVerified: () => verified,
+      getClientId: () => getClientId(),
     }));
 
     return (
       <div className={className}>
         <SliderCaptcha
           actionRef={sliderRef}
-          request={handlePuzzleRequest}
-          onVerify={verifySliderCaptcha}
-          limitErrorCount={mergedConfig.maxErrorCount}
+          request={initCaptcha}
+          onVerify={verifyCaptcha}
+          limitErrorCount={5}
           autoRefreshOnError={autoRefresh}
           errorHoldDuration={1000}
-          tipText={mergedTipText}
+          tipText={{
+            default: "向右拖动滑块填充拼图",
+            loading: "加载中...",
+          }}
           bgSize={{ width: 320, height: 160 }}
           puzzleSize={{ width: 60 }}
           style={{
