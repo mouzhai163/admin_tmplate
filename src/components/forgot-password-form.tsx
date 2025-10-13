@@ -10,9 +10,9 @@ import { Mail, CheckCircle2 } from "lucide-react";
 import z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { authClient } from "@/lib/auth-client";
+import CaptchaVerification, { CaptchaVerificationRef } from "./m_ui/CaptchaVerification";
 
 // zod校验规则
 const forgotPasswordSchema = z.object({
@@ -30,6 +30,9 @@ export function ForgotPasswordForm({
   const [emailSent, setEmailSent] = useState(false);
   const [sentEmail, setSentEmail] = useState("");
   const [isAlertVisible, setIsAlertVisible] = useState(false);
+  const [countdown, setCountdown] = useState(0); // 倒计时秒数
+  
+  const captchaVerificationRef = useRef<CaptchaVerificationRef>(null); // 验证码组件引用
 
   const {
     register,
@@ -39,18 +42,99 @@ export function ForgotPasswordForm({
     resolver: zodResolver(forgotPasswordSchema),
   });
 
+  // 倒计时效果
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => {
+        setCountdown(countdown - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
+
   const onSubmit = async (FormData: ForgotPasswordForm) => {
+    // 检查验证码是否已验证
+    if (!captchaVerificationRef.current?.isVerified()) {
+      toast.error("请先完成人机验证", {
+        description: "请点击复选框完成安全验证",
+        duration: 3000,
+      });
+      return;
+    }
+    
+    const captchaToken = captchaVerificationRef.current.getToken();
+
     try {
       setIsLoading(true);
       
-      await authClient.requestPasswordReset({
-        email: FormData.email,
-        redirectTo: "/reset-password",
-      })
+      // 调用本地API
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: FormData.email,
+          captchaToken: captchaToken,
+          redirectTo: "/reset-password",
+        }),
+      });
+
+      const result = await response.json();
+      
+      setIsLoading(false);
+      
+      if (!response.ok) {
+        // 处理错误
+        // 清理 Redis 记录并重置验证码
+        if (captchaToken && captchaVerificationRef.current) {
+          const clientId = captchaVerificationRef.current.getClientId();
+          await fetch("/api/captcha/clear", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              token: captchaToken,
+              clientId: clientId,
+            }),
+          });
+        }
+        
+        captchaVerificationRef.current?.reset();
+        
+        // 错误处理
+        if (result.code === "INVALID_CAPTCHA") {
+          toast.error("验证失败", {
+            description: "验证码无效或已过期，请重新验证",
+            duration: 4000,
+          });
+        } else if (result.code === "USER_NOT_FOUND") {
+          toast.error("发送失败", {
+            description: "未找到该邮箱对应的账号",
+            duration: 4000,
+          });
+        } else if (result.code === "RATE_LIMITED") {
+          toast.error("请求过于频繁", {
+            description: "请1分钟后再试",
+            duration: 4000,
+          });
+        } else {
+          toast.error("系统错误", {
+            description: result.message || "发送重置邮件失败，请稍后重试",
+            duration: 4000,
+          });
+        }
+        return;
+      }
       
       // 成功后显示提示
       setSentEmail(FormData.email);
       setEmailSent(true);
+      
+      // 重置验证码状态（确保下次需要重新验证）
+      captchaVerificationRef.current?.reset();
+      
+      // 启动60秒倒计时
+      setCountdown(60);
       
       // 使用 setTimeout 让浏览器先渲染初始状态，然后触发淡入动画
       setTimeout(() => {
@@ -67,10 +151,9 @@ export function ForgotPasswordForm({
         setEmailSent(false);
       }, 5000);
       
-      
-      setIsLoading(false);
     } catch (err) {
       setIsLoading(false);
+      // 发生错误时不启动倒计时
       console.error("发送重置邮件异常:", err);
       toast.error("系统错误", {
         description: "发送重置邮件失败，请稍后重试",
@@ -151,11 +234,33 @@ export function ForgotPasswordForm({
                 )}
               </div>
 
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              {/* 人机验证组件 - 倒计时期间隐藏 */}
+              <div 
+                className={cn(
+                  "transition-all duration-300 ease-in-out",
+                  countdown > 0 ? "opacity-0 h-0 overflow-hidden" : "opacity-100"
+                )}
+              >
+                <CaptchaVerification
+                  ref={captchaVerificationRef}
+                  type="forgotPassword"
+                />
+              </div>
+
+              <Button 
+                type="submit" 
+                className={cn("w-full", countdown > 0 && "opacity-80 cursor-not-allowed")}
+                disabled={isLoading || countdown > 0}
+              >
                 {isLoading ? (
                   <span className="flex items-center gap-2">
                     <Mail className="h-4 w-4 animate-pulse" />
                     发送中...
+                  </span>
+                ) : countdown > 0 ? (
+                  <span className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 opacity-70" />
+                    <span className="font-medium">{countdown}秒后可重新发送</span>
                   </span>
                 ) : (
                   "发送重置链接"

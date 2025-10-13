@@ -1,5 +1,4 @@
 import { redis } from "@/lib/redis";
-import { logger } from "./myUtils";
 
 /**
  * 验证 captcha token 是否有效
@@ -49,74 +48,3 @@ export async function validateCaptchaToken(token: string | null | undefined, typ
     return false;
   }
 }
-
-/**
- * 获取验证码会话统计信息
- */
-// export async function getCaptchaStats() {
-//   try {
-//     const stats = {
-//       total: 0,
-//       verified: 0,
-//       unverified: 0,
-//       activeIps: new Set<string>(),
-//       verifiedTokens: 0,
-//     };
-    
-//     // 扫描所有验证码会话
-//     let cursor = 0;
-//     do {
-//       const result = await redis.scan(cursor, {
-//         match: "captcha:*",
-//         count: 100,
-//       });
-      
-//       cursor = Number(result[0]);
-//       const keys = result[1];
-      
-//       // 获取每个会话的详细信息
-//       for (const key of keys) {
-//         const sessionData = await redis.hgetall(key);
-//         if (sessionData && Object.keys(sessionData).length > 0) {
-//           stats.total++;
-          
-//           if (sessionData.verified === 'true') {
-//             stats.verified++;
-//           } else {
-//             stats.unverified++;
-//           }
-          
-//           if (sessionData.ipAddress) {
-//             stats.activeIps.add(sessionData.ipAddress as string);
-//           }
-//         }
-//       }
-//     } while (cursor !== 0);
-    
-//     // 统计已验证的 token 数量
-//     cursor = 0;
-//     do {
-//       const result = await redis.scan(cursor, {
-//         match: "verified:*",
-//         count: 100,
-//       });
-      
-//       cursor = Number(result[0]);
-//       stats.verifiedTokens += result[1].length;
-//     } while (cursor !== 0);
-    
-//     return {
-//       ...stats,
-//       uniqueIps: stats.activeIps.size,
-//     };
-//   } catch (error) {
-//     console.error("获取验证码统计信息失败:", error);
-//     return {
-//       total: 0,
-//       verified: 0,
-//       unverified: 0,
-//       uniqueIps: 0,
-//       verifiedTokens: 0,
-//     };
-//   }
-// }

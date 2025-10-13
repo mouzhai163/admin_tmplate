@@ -87,6 +87,7 @@ export function LoginForm({
     const captchaToken = captchaVerificationRef.current.getToken();
 
     try {
+      
       setIsLoading(true);
       setBanInfo(null); // 清除之前的封禁信息
       setEmailNotVerifiedInfo(null); // 清除之前的邮箱未验证信息

@@ -21,9 +21,10 @@ export const auth = betterAuth({
     sendResetPassword: async ({ user, url }) => {
       await mailer.sendPasswordResetEmail(user.email, url, user.name);
     },
-    onPasswordReset: async ({ user }) => {
-      console.log("密码重置成功:", user.email);
-    },
+    // 密码重置后执行的操作  可以用于更新用户的update_at信息
+    // onPasswordReset: async ({ user }) => {
+    //   console.log("密码重置成功:", user.email);
+    // },
   },
 
   database: drizzleAdapter(db, {
@@ -96,7 +97,6 @@ export const auth = betterAuth({
       // 在邮箱登录时验证验证码
       if (path === "/sign-in/email") {
         const captchaToken = ctx.body?.captchaToken;
-        logger.info("captchaToken:", captchaToken);
         // 验证验证码 token
         const isValidCaptcha = await validateCaptchaToken(captchaToken, "login");
         if (!isValidCaptcha) {

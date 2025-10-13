@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     const fingerprint = await generateFingerprint(ip, userAgent);
 
     // 验证 type 参数
-    if (!["login", "signup"].includes(type)) {
+    if (!["login", "signup","forgotPassword"].includes(type)) {
       return NextResponse.json(
         { success: false, error: "无效的验证码类型" },
         { status: 400 }

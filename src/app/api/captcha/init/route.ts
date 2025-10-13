@@ -13,12 +13,8 @@ import { CaptchaSession } from "./captcha.types";
 // 获取验证码图片列表
 async function getCaptchaImages() {
   const captchaDir = path.join(process.cwd(), "public", "captcha");
-  try {
     const files = await fs.readdir(captchaDir);
     return files.filter(file => /\.(jpg|jpeg|png)$/i.test(file));
-  } catch {
-    return ["default.jpg"]; // 默认图片
-  }
 }
 
 // 生成会话指纹
@@ -55,7 +51,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 验证 type 参数
-    if (!["login", "signup"].includes(type)) {
+    if (!["login", "signup","forgotPassword"].includes(type)) {
       return NextResponse.json(
         { success: false, error: "无效的验证码类型" },
         { status: 400 }
@@ -114,8 +110,6 @@ export async function POST(request: NextRequest) {
 
     // 如果找到现有 session，直接复用（更新拼图位置和过期时间）
     if (existingSession) {
-      logger.info("复用现有 session:", existingSession.id);
-      
       const newExpiresAt = new Date(now.getTime() + TTL_SECONDS * 1000);
       
       // 更新 Redis 中的会话数据

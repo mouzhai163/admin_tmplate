@@ -10,5 +10,5 @@ export interface CaptchaSession {
   expiresAt: string;
   verified: boolean;
   verificationToken: string;
-  type?: string; // 验证码类型：login 或 signup
+  type?: string; // 验证码类型：login、signup 或 forgotPassword
 }

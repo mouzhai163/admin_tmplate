@@ -95,7 +95,6 @@ export function ResetPasswordForm({
 
       if (error) {
         setIsLoading(false);
-        
         let errorMessage = "密码重置失败，请重试";
         if (error.status === 400) {
           errorMessage = "链接已过期或无效，请重新申请重置密码";

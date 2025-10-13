@@ -36,9 +36,9 @@ interface CaptchaProps {
    */
   autoRefresh?: boolean;
   /**
-   * 验证码类型：login 或 signup
+   * 验证码类型：login、signup 或 forgotPassword
    */
-  type?: "login" | "signup";
+  type?: "login" | "signup" | "forgotPassword";
 }
 
 // 组件暴露的方法
