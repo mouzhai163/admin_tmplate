@@ -2,11 +2,12 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware, APIError } from "better-auth/api";
 import db from "@/db";
-import { session, user } from "@/db/schema/auth-schema";
+import { session } from "@/db/schema/auth-schema";
 import { eq, and, ne } from "drizzle-orm";
 import * as schema from "@/db/schema/auth-schema";
 import { websiteInfo } from "@/db/schema/webSite_info";
 import mailer from "./mailer";
+import { admin } from "better-auth/plugins"
 import { nextCookies } from "better-auth/next-js";
 import { validateCaptchaToken } from "./captcha-validator";
 import { logger } from "./myUtils";
@@ -67,25 +68,8 @@ export const auth = betterAuth({
         console.error("邮件函数 - 验证邮件发送失败:", error);
       }
     },
-    // 验证后自动登录
-    // autoSignInAfterVerification : false,
     // 验证邮件过期时间
     expiresIn: 3600, // 1小时
-  },
-  // 扩展User表
-  user: {
-    additionalFields: {
-      role: {
-        type: "string",
-        required: false,
-        defaultValue: "user",
-        input: false, // 不允许注册时由用户提交
-      },
-      banned: { type: "boolean", required: false, defaultValue: false },
-      bannedAt: { type: "date", required: false },
-      bannedUntil: { type: "date", required: false },
-      bannedReason: { type: "string", required: false },
-    },
   },
   hooks: {
     /**
@@ -128,76 +112,13 @@ export const auth = betterAuth({
     /**
      * 登录后统一处理逻辑 (after hook 在密码验证成功后执行)
      * 执行顺序:
-     *  1. 检查用户是否被封禁 (密码验证成功后才检查,避免信息泄露)
-     *  2. 检查单点登录模式 (清理其他 session)
+     *  1. 检查单点登录模式 (清理其他 session)
      */
     after: createAuthMiddleware(async (ctx) => {
       // 统一处理 path: 去掉结尾的斜杠
       const path = (ctx.path || "").replace(/\/+$/, "");
 
-      // ========== 第一步: 封禁检查 ==========
-      // 只在邮箱登录接口执行封禁检查
-      if (path === "/sign-in/email") {
-        const email: string | undefined = ctx.body?.email?.toLowerCase?.();
-        if (!email) return; // 交给默认校验报错
-
-        // 查询用户封禁状态
-        const user_info = await db
-          .select()
-          .from(user)
-          .where(eq(user.email, email))
-          .then((res) => res?.[0]);
-
-        // 如果用户被封禁
-        if (user_info?.banned) {
-          // 检查临时封禁是否已过期
-          const bannedUntil = user_info.bannedUntil
-            ? new Date(user_info.bannedUntil)
-            : null;
-
-          if (bannedUntil && new Date() > bannedUntil) {
-            // 临时封禁已过期 => 自动解封
-            await db
-              .update(user)
-              .set({
-                banned: false,
-                bannedAt: null,
-                bannedUntil: null,
-                bannedReason: null,
-              })
-              .where(eq(user.email, email));
-            // 解封成功,继续后续流程
-          } else {
-            // 仍然处于封禁中 => 删除刚创建的 session 并返回封禁信息
-            const currentUser = ctx.context?.newSession?.user;
-            if (currentUser) {
-              await db
-                .delete(session)
-                .where(eq(session.userId, currentUser.id));
-            }
-
-            // 构建详细的封禁信息
-            const banInfo: Record<string, string> = {};
-            if (user_info.bannedAt) {
-              banInfo.bannedAt = new Date(user_info.bannedAt).toISOString();
-            }
-            if (bannedUntil) {
-              banInfo.bannedUntil = bannedUntil.toISOString();
-            }
-            if (user_info.bannedReason) {
-              banInfo.reason = user_info.bannedReason;
-            }
-
-            throw new APIError("FORBIDDEN", {
-              message: JSON.stringify(banInfo),
-              code: "USER_BANNED",
-            });
-          }
-        }
-        // 没有被封禁或已自动解封,继续执行后续逻辑
-      }
-
-      // ========== 第二步: 单点登录检查 ==========
+      // ========== 第一步: 单点登录检查 ==========
       // 只在任何登录接口成功后执行
       if (path.startsWith("/sign-in")) {
         // 判断是否登录成功 (after hook 中有 newSession 才代表登录成功)
@@ -234,5 +155,13 @@ export const auth = betterAuth({
       return;
     }),
   },
-  plugins: [nextCookies()],
+  // nextCookies() 必须最后一个
+  plugins: [admin({
+    // 注册时的默认角色
+    defaultRole: "user",
+    // 管理员角色
+    adminRoles: ["admin"],
+    // 被封禁展示的消息
+    bannedUserMessage:"您的账号已被封禁! 如有问题请联系管理员处理!"
+  }),nextCookies() ],
 });

@@ -145,7 +145,7 @@ export function SignupForm() {
 
       // 注册成功
       toast.success("注册成功!", {
-        description: "请登录时验证邮箱!",
+        description: "邮件已发送至邮箱,请验证账号!",
         duration: 4000,
       });
       

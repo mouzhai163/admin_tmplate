@@ -111,26 +111,20 @@ export default async function Page() {
                     封禁详情
                   </h3>
                   <div className="space-y-2 text-sm">
-                    {session.user.bannedAt && (
-                      <p className="text-red-800 dark:text-red-300">
-                        <span className="font-medium">封禁时间：</span>
-                        {formatToCNTime(new Date(session.user.bannedAt))}
-                      </p>
-                    )}
-                    {session.user.bannedUntil ? (
+                    {session.user.banExpires ? (
                       <p className="text-red-800 dark:text-red-300">
                         <span className="font-medium">解封时间：</span>
-                        {formatToCNTime(new Date(session.user.bannedUntil))}
+                        {formatToCNTime(new Date(session.user.banExpires))}
                       </p>
                     ) : (
                       <p className="text-red-800 dark:text-red-300 font-semibold">
                         ⚠️ 永久封禁
                       </p>
                     )}
-                    {session.user.bannedReason && (
+                    {session.user.banReason && (
                       <p className="text-red-800 dark:text-red-300">
                         <span className="font-medium">封禁原因：</span>
-                        {session.user.bannedReason}
+                        {session.user.banReason}
                       </p>
                     )}
                   </div>

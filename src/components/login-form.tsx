@@ -7,14 +7,13 @@ import { Label } from "@/components/ui/label";
 import Image from "next/image";
 import { PasswordInput } from "./m_ui/PasswordInput";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircle, Clock, Shield, Mail } from "lucide-react";
+import { AlertCircle, Shield, Mail } from "lucide-react";
 import z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { authClient } from "@/lib/auth-client";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
-import { formatDate } from "@/lib/myUtils";
 import CaptchaVerification, { CaptchaVerificationRef } from "./m_ui/CaptchaVerification";
 import { useRouter } from "next/navigation";
 
@@ -31,13 +30,6 @@ const loginSchema = z.object({
 // 推断TypeScript数据类型
 type loginForm = z.infer<typeof loginSchema>;
 
-// 封禁信息类型
-interface BanInfo {
-  bannedAt?: string;
-  bannedUntil?: string;
-  reason?: string;
-}
-
 // 邮箱未验证信息类型
 interface EmailNotVerifiedInfo {
   email: string;
@@ -48,7 +40,7 @@ const ErrorCodes = {
   INVALID_EMAIL_OR_PASSWORD: "INVALID_EMAIL_OR_PASSWORD",
   INVALID_CAPTCHA: "INVALID_CAPTCHA",
   EMAIL_NOT_VERIFIED: "EMAIL_NOT_VERIFIED",
-  USER_BANNED: "USER_BANNED",
+  USER_BANNED: "BANNED_USER",
 } as const;
 
 type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes];
@@ -58,7 +50,7 @@ export function LoginForm({
   ...props
 }: React.ComponentProps<"div">) {
   const [isLoading, setIsLoading] = useState(false);
-  const [banInfo, setBanInfo] = useState<BanInfo | null>(null);
+  const [banInfo, setBanInfo] = useState({reason:''});
   const [emailNotVerifiedInfo, setEmailNotVerifiedInfo] =
     useState<EmailNotVerifiedInfo | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false); // 邮件发送 loading 状态
@@ -89,7 +81,7 @@ export function LoginForm({
     try {
       
       setIsLoading(true);
-      setBanInfo(null); // 清除之前的封禁信息
+      setBanInfo({reason:''}); // 清除之前的封禁信息
       setEmailNotVerifiedInfo(null); // 清除之前的邮箱未验证信息
 
       // 创建自定义的请求来传递额外数据
@@ -106,7 +98,6 @@ export function LoginForm({
       });
 
       const result = await response.json();
-      
       // 处理响应 - better-auth 直接返回错误对象，不是包装在 error 字段中
       setIsLoading(false);
       
@@ -151,13 +142,7 @@ export function LoginForm({
           },
           
           [ErrorCodes.USER_BANNED]: () => {
-            try {
-              const banData = error.message ? JSON.parse(error.message) : {};
-              setBanInfo(banData);
-            } catch (e) {
-              console.error("解析封禁信息失败:", e);
-              setBanInfo({ reason: "账号已被封禁" });
-            }
+              setBanInfo({reason: error.message});
           },
         };
         
@@ -216,50 +201,16 @@ export function LoginForm({
               </div>
 
               {/* 封禁信息 Alert */}
-              {banInfo && (
+              {banInfo.reason !== '' && (
                 <Alert variant="destructive" className="border-2">
                   <Shield className="h-4 w-4" />
                   <AlertTitle className="text-sm font-semibold">
                     账户已被封禁
                   </AlertTitle>
                   <AlertDescription className="mt-2 space-y-1">
-                    {/* 封禁时间 */}
-                    {banInfo.bannedAt && (
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <Clock className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="font-medium">封禁时间：</span>
-                        <span>{formatDate(new Date(banInfo.bannedAt))}</span>
-                      </div>
-                    )}
-
-                    {/* 解封时间或永久封禁 */}
-                    {banInfo.bannedUntil ? (
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="font-medium">解封时间：</span>
-                        <span>{formatDate(new Date(banInfo.bannedUntil))}</span>
-                      </div>
-                    ) : banInfo.bannedAt ? (
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="font-medium">封禁类型：</span>
-                        <span>永久封禁</span>
-                      </div>
-                    ) : null}
-
-                    {/* 封禁原因 */}
-                    {banInfo.reason && (
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="font-medium">封禁原因：</span>
+                      <div className="flex gap-1.5 text-xs">
                         <span>{banInfo.reason}</span>
                       </div>
-                    )}
-
-                    {/* 如果没有任何详细信息 */}
-                    {!banInfo.bannedAt && !banInfo.reason && (
-                      <p className="text-xs">您的账户已被封禁，无法登录系统</p>
-                    )}
                   </AlertDescription>
                 </Alert>
               )}

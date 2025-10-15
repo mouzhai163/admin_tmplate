@@ -11,17 +11,15 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar"
 import { TeamSwitcher } from "./team-switcher"
+import { auth } from "@/lib/auth"
+import { headers } from "next/headers"
 
-// This is sample data.
-const data = {
-  user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
-  },
-}
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export async function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+  
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarContent>
@@ -32,7 +30,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavMain />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={session?.user} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
